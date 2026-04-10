@@ -1,3 +1,0 @@
-#file di prova
-#ciaoo22
-#CIAOOOOO33333I493NFAFNSE
