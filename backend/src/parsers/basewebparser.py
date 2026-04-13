@@ -54,7 +54,7 @@ class BaseWebParser:
             crawl_results = await crawler.arun_many(
                 urls=self.urls,
                 config=self.run_config,
-                bypass_cache=True
+                bypass_cache=False
             )
 
             for result in crawl_results:
