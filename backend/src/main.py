@@ -69,10 +69,10 @@ async def main():
         print("\n" + "*" * 80)
 
     # ==================== SALVATAGGIO DATI ====================
-    output_dir = Path("gs_data")
+    output_dir = Path("results")
     output_dir.mkdir(exist_ok=True)
     
-    output_path = output_dir / "wikipedia_gs.json"
+    output_path = output_dir / "wikipedia_results.json"
     
     try:
         with open(output_path, "w", encoding="utf-8") as f:
