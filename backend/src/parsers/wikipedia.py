@@ -59,7 +59,7 @@ class WikipediaParser(BaseWebParser):
 
                 # Se troviamo una sezione di servizio, attiviamo lo skip e passiamo oltre
                 if any(skip in lower for skip in [
-                    "note", "references", "external links", "see also", "bibliography", "further reading"
+                    "note", "references", "external links", "see also", "bibliography", "further reading", "citations"
                 ]):
                     skip_section = True
                     continue

@@ -16,10 +16,11 @@ from parsers.wikipedia import WikipediaParser
 async def main():
     # ==================== CONFIGURAZIONE ====================
     wiki_urls = [
-        "https://en.wikipedia.org/wiki/Artificial_intelligence",
-        "https://en.wikipedia.org/wiki/Proto-Romance_language",
-        "https://en.wikipedia.org/wiki/Sapienza_University_of_Rome",
-        "https://en.wikipedia.org/wiki/Trod"
+        "https://en.wikipedia.org/wiki/Giuseppe_Compagnoni",
+        "https://en.wikipedia.org/wiki/Lake_Bracciano",
+        "https://en.wikipedia.org/wiki/Emblem_of_Italy",
+        "https://en.wikipedia.org/wiki/Prince_of_Piedmont",
+        "https://en.wikipedia.org/wiki/SS_Alba-Audace_Roma"
     ]
 
     print("=" * 80)
