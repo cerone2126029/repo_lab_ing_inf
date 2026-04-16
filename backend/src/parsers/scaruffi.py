@@ -32,27 +32,49 @@ class ScaruffiParser(BaseWebParser):
         if not body:
             return "Nessun tag <body> trovato."
 
-        # 1. ELIMINAZIONE DEL RUMORE
-        # Su Scaruffi spesso la navigazione è in tabelle all'inizio o alla fine.
-        # Eliminiamo script, stili e le classiche "barre di navigazione" se presenti.
-        for tag in body.find_all(['script', 'style', 'nav', 'iframe']):
+        # 1. ELIMINAZIONE DEL RUMORE INVISIBILE E STRUTTURALE
+        for tag in body.find_all(['script', 'style', 'nav', 'iframe', 'form']):
             tag.decompose()
 
-        # Molte pagine di Scaruffi hanno link di navigazione in fondo dentro tag <center> o <hr>
-        # Un'euristica comune: se trovi un tag <hr> (linea orizzontale), spesso quello che c'è sotto è il footer.
-        # (Nota: potresti dover affinare questo in base agli URL esatti che ti ha dato il prof).
+        # 2. EURISTICA DELLA DENSITA' DEI LINK (Per eliminare le discografie e i menù grandi)
+        for container in body.find_all(['table', 'ul']):
+            links = container.find_all('a')
+            if not links:
+                continue
+            
+            text_in_links = sum(len(a.get_text(strip=True)) for a in links)
+            total_text = len(container.get_text(strip=True))
+            
+            if total_text > 0 and (text_in_links / total_text) > 0.40:
+                container.decompose()
 
-        # 2. ESTRAZIONE DEL TESTO
-        # Poiché usa molti tag <br> per andare a capo invece dei <p>, 
-        # usiamo un separatore per evitare che le parole si incollino.
-        raw_text = body.get_text(separator=" ", strip=True)
+        # 3. ESTRAZIONE DEL TESTO
+        raw_text = body.get_text(separator="\n", strip=True)
 
-        # 3. PULIZIA DEL TESTO (REGEX)
-        # Rimuoviamo i riferimenti classici di Scaruffi (es. se ci sono email o copyright strani)
-        # e normalizziamo gli spazi multipli creati dal separatore
-        clean_text = re.sub(r'\s+', ' ', raw_text)
-        
-        # Sostituiamo eventuale punteggiatura incollata per via di HTML malformato
-        clean_text = re.sub(r'\s+([.,;:!?])', r'\1', clean_text)
+        # 4. LA BLACKLIST (Sterminatore di Boilerplate di Scaruffi)
+        # Un elenco di pattern Regex per disintegrare le frasi fastidiose ovunque siano
+        spazzatura = [
+            r'\(\s*Copyright[^)]+\)',                          # Copyright con o senza parentesi
+            r'What is unique about this music database\??',    # La frase specifica del database
+            r'\([Cc]lick[^)]+(version|qua|here)[^)]+\)',       # Il link della traduzione
+            r'Terms of use',                                   # Frasi legali
+            r'Back to the\s+[A-Za-z\s]+',                      # Link di ritorno (es. "Back to the index")
+            r'Links to other sites'                            # Intestazioni di link
+        ]
 
-        return clean_text.strip()
+        # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")
+        for pattern in spazzatura:
+            raw_text = re.sub(pattern, '', raw_text, flags=re.IGNORECASE)
+
+        # 5. PULIZIA FINALE E IMPAGINAZIONE
+        clean_lines = []
+        for line in raw_text.split('\n'):
+            line = line.strip()
+            
+            # Ignoriamo le righe vuote e i "rimasugli" grafici come la barra |
+            if line and line != "|":
+                clean_lines.append(line)
+
+        final_text = "\n\n".join(clean_lines)
+
+        return final_text
