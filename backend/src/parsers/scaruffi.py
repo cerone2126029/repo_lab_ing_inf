@@ -54,12 +54,13 @@ class ScaruffiParser(BaseWebParser):
         # 4. LA BLACKLIST (Sterminatore di Boilerplate di Scaruffi)
         # Un elenco di pattern Regex per disintegrare le frasi fastidiose ovunque siano
         spazzatura = [
-            r'\(\s*Copyright[^)]+\)',                          # Copyright con o senza parentesi
-            r'What is unique about this music database\??',    # La frase specifica del database
-            r'\([Cc]lick[^)]+(version|qua|here)[^)]+\)',       # Il link della traduzione
-            r'Terms of use',                                   # Frasi legali
-            r'Back to the\s+[A-Za-z\s]+',                      # Link di ritorno (es. "Back to the index")
-            r'Links to other sites'                            # Intestazioni di link
+            r'\(\s*Copyright[^)]+\)',                                         # Copyright con o senza parentesi
+            r'What is unique about this music database\??',                   # La frase specifica del database
+            r'\([Cc]lick[^)]+(version|qua|here)[^)]+\)',                      # Il link della traduzione
+            r'Terms of use',                                                  # Frasi legali
+            r'Back to the\s+[A-Za-z\s]+',                                     # Link di ritorno (es. "Back to the index")
+            r'Links to other sites',
+            r'\(\s*(Translation\s+by|Translated\s+by|Tradotto\s+da)[^)]+\)'   # Intestazioni di link
         ]
 
         # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")
