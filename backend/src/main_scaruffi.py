@@ -9,11 +9,11 @@ from parsers.scaruffi import ScaruffiParser
 async def main():
     # Inserisci qui i 5 URL di Scaruffi che ti ha assegnato il prof
     scaruffi_urls = [
-        "https://www.scaruffi.com/vol1/beatles.html",
-        "https://www.scaruffi.com/vol1/stones.html", 
-        "https://www.scaruffi.com/vol7/hecker.html",
-        "https://www.scaruffi.com/vol6/fennesz.html",
-        "https://www.scaruffi.com/vol6/pansonic.html"
+        "https://www.scaruffi.com/history/jazz17h.html",
+        "https://www.scaruffi.com/vol1/them.html", 
+        "https://www.scaruffi.com/mind/ns.html",
+        "https://www.scaruffi.com/science/courses.html",
+        "https://www.scaruffi.com/history/calendar.html"
     ]
 
     print("=" * 80)
