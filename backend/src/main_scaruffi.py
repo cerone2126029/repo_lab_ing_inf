@@ -1,45 +1,34 @@
 import asyncio
-import os
-import json
-from pathlib import Path
-
-# IMPORTIAMO IL NUOVO PARSER
 from parsers.scaruffi import ScaruffiParser
 
 async def main():
-    # Inserisci qui i 5 URL di Scaruffi che ti ha assegnato il prof
-    scaruffi_urls = [
-        "https://www.scaruffi.com/history/jazz17h.html",
-        "https://www.scaruffi.com/vol1/them.html", 
-        "https://www.scaruffi.com/mind/ns.html",
-        "https://www.scaruffi.com/science/courses.html",
-        "https://www.scaruffi.com/history/calendar.html"
-    ]
+    print("Inizializzazione del ScaruffiParser...")
+    parser = ScaruffiParser()
 
-    print("=" * 80)
-    print("🚀 AVVIO PIPELINE PARSING SCARUFFI")
-    print("=" * 80)
-
-    # Inizializziamo il nuovo parser
-    parser = ScaruffiParser(urls=scaruffi_urls)
-
-    results = await parser.run_parallel()
+    test_url = "https://www.scaruffi.com/vol1/beatles.html"
     
-    # ... (Lascia intatta la parte centrale con le stampe a schermo) ...
+    print(f"Avvio crawling asincrono per: {test_url}\n")
+    
+    result = await parser.parse_single(test_url)
+    
+    if result["parsed_text"].startswith("ERRORE:"):
+        print("Si è verificato un errore durante il crawling:")
+        print(result["parsed_text"])
+        return
 
-    # ==================== SALVATAGGIO DATI ====================
-    output_dir = Path("results")
-    output_dir.mkdir(exist_ok=True)
+    print("=== RISULTATI ESTRAZIONE ===")
+    print(f"URL Originale: {result['url']}")
+    print(f"Dominio:       {result['domain']}")
+    print(f"Titolo:        {result['title']}")
+    print("============================\n")
     
-    # SALVIAMO IN UN FILE DIVERSO!
-    output_path = output_dir / "scaruffi_results.json" 
+    print("=== ANTEPRIMA TESTO PULITO (primi 20000 caratteri) ===")
+    print(result["parsed_text"][:20000])
+    print("\n[...] (testo troncato per l'anteprima)")
     
-    try:
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=4)
-        print(f"\n💾 Dati salvati in: {output_path}")
-    except IOError as e:
-        print(f"\n❌ Errore durante il salvataggio: {e}")
+    # Controllo lunghezza totale
+    print(f"\nLunghezza totale del testo estratto: {len(result['parsed_text'])} caratteri")
 
 if __name__ == "__main__":
+    # Esegue il loop asincrono
     asyncio.run(main())
