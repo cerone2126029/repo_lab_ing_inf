@@ -1,5 +1,11 @@
 import json
+import sys
+import os
 from pathlib import Path
+
+# Risoluzione del path per evitare errori di import (ModuleNotFoundError)
+current_dir = Path(__file__).resolve().parent
+sys.path.append(str(current_dir / "src"))
 
 # Importiamo il parser di Scaruffi e l'Evaluator
 from src.parsers.scaruffi import ScaruffiParser
@@ -20,8 +26,8 @@ def run_scaruffi_evaluation():
     print(f"🎸 INIZIO VALUTAZIONE: Dominio Scaruffi ({len(gold_standard)} URL)")
     print("=" * 60)
     
-    # 2. Inizializza il parser di Scaruffi
-    parser = ScaruffiParser(urls=[]) 
+    # 2. Inizializza il parser di Scaruffi SENZA PARAMETRI (Errore risolto!)
+    parser = ScaruffiParser() 
     
     total_f1 = 0.0
     total_precision = 0.0

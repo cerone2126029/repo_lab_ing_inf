@@ -1,8 +1,9 @@
 import re
+from bs4 import BeautifulSoup
 from crawl4ai import CrawlerRunConfig, CacheMode
 from parsers.basewebparser import BaseWebParser
 from typing import Dict, Any
-
+from urllib.parse import unquote
 
 class WikipediaParser(BaseWebParser):
 
@@ -15,51 +16,49 @@ class WikipediaParser(BaseWebParser):
             exclude_external_links=True,
             css_selector="#mw-content-text", 
             excluded_tags=["nav", "footer", "header", "aside", "figure"],
-            excluded_selector=".infobox, .infobox_v2, .mw-editsection, .navbox, #toc, .ambox, .hatnote, .thumb, .thumbinner, .gallery, .shortdescription, .tright, .tleft, .mw-halign-right, .mw-halign-left, .mw-halign-center"
+            excluded_selector=".infobox, .infobox_v2, .mw-editsection, .navbox, #toc, .ambox, .hatnote, .thumb, .thumbinner, .gallery, .shortdescription, .tright, .tleft, .mw-halign-right, .mw-halign-left, .mw-halign-center, .reference"
         )
 
     def extract_data(self, result) -> Dict[str, Any]:
         data = super().extract_data(result)
+        
+        # === FIX 1: RECUPERO TITOLO DI EMERGENZA DALL'URL ===
+        # Dato che il css_selector taglia l'h1, estraiamo il titolo direttamente dal link!
+        if not data.get("title") and data.get("url"):
+            url = data["url"]
+            if "/wiki/" in url:
+                # Prende la parte finale (es: Giuseppe_Compagnoni)
+                raw_title = url.split("/wiki/")[-1]
+                # Decodifica caratteri speciali (es: %20) e toglie gli underscore
+                data["title"] = unquote(raw_title).replace("_", " ")
+
+        # === FIX 2: APPLICAZIONE PULIZIA TESTO ===
+        testo_grezzo = data.get("parsed_text", "")
        
-        if result.success and result.markdown:
-            clean_md = self.clean_wikipedia_markdown(result.markdown)
-            data["parsed_text"] = clean_md
-        else:
-            data["parsed_text"] = f"ERRORE: {getattr(result, 'error_message', 'Unknown error')}"    
+        if result.success and testo_grezzo and not testo_grezzo.startswith("ERRORE"):
+            data["parsed_text"] = self.clean_wikipedia_markdown(testo_grezzo)
        
         return data
-
 
     def clean_wikipedia_markdown(self, text: str) -> str:
         if not text:
             return ""
 
-
-        # Taglia tutte le sezioni di servizio
-        stop_patterns = [
-            r'##\s*References?',
-            r'##\s*Notes?',
-            r'##\s*See also',
-            r'##\s*External links?',
-            r'##\s*Further reading',
-            r'##\s*Bibliography',
-            r'##\s*Citations?',
-        ]
-       
-        for pattern in stop_patterns:
-            match = re.search(pattern, text, flags=re.IGNORECASE)
-            if match:
-                text = text[:match.start()]
-                break
-
+        # 1. LA GHIGLIOTTINA FINALE SUPER-BLINDATA
+        # Il simbolo '^' abbinato a re.MULTILINE cerca a inizio di ogni riga.
+        # È infallibile, indipendentemente dagli spazi o dagli a capo invisibili.
+        stop_pattern = r'^#+\s*(References?|Notes?|See also|External links?|Further reading|Bibliography|Citations?).*$'
+        match = re.search(stop_pattern, text, flags=re.IGNORECASE | re.MULTILINE)
+        if match:
+            text = text[:match.start()]
 
         # === Pulizia Specifica per Wikipedia ===
         
         # 1. Distrugge i link delle note di Wikipedia
         text = re.sub(r'\[[^\]]*\]\s*\([^\)]*#cite_note[^\)]*\)', '', text, flags=re.IGNORECASE)
         
-        # 2. Distrugge qualsiasi link vuoto rimasto
-        text = re.sub(r'\[\s*\]\s*\([^\)]+\)', '', text)
+        # 2. Distrugge qualsiasi link vuoto rimasto (es. [](url) )
+        text = re.sub(r'\[\s*\]\([^\)]+\)', '', text)
         
         # 3. Elimina i [citation needed] 
         text = re.sub(r'_?\[citation needed\]_?', '', text, flags=re.IGNORECASE)

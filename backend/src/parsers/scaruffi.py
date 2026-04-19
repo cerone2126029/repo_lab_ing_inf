@@ -7,9 +7,8 @@ import re
 
 class ScaruffiParser(BaseWebParser):
 
-    def __init__(self, urls):
-        super().__init__(urls)
-        # Niente wait_for, il sito di Scaruffi è statico e leggerissimo
+    def __init__(self):
+        super().__init__()
         self.run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
             exclude_external_links=True,
@@ -54,14 +53,31 @@ class ScaruffiParser(BaseWebParser):
         # 4. LA BLACKLIST (Sterminatore di Boilerplate di Scaruffi)
         # Un elenco di pattern Regex per disintegrare le frasi fastidiose ovunque siano
         spazzatura = [
-            r'\(\s*Copyright[^)]+\)',                          
-            r'What is unique about this music database\??',    
-            r'Terms of use',                                   
-            r'Back to the\s+[A-Za-z\s]+',                      
-            r'Links to other sites',
-            # LA NUOVA REGEX SUPREMA PER TRADUZIONI E CLICK
-            # Trova "(", eventuali spazi, e poi "Click", "Clicca", "Translation", o "Tradotto"
-            r'\(\s*(?:[Cc]lick|[Cc]licca|Translation|Translated|Tradotto)[^)]+\)'
+            # I blocchi Copyright (cattura tutto da TM/Copyright fino a reserved)
+            r'(?is)TM.*?Copyright.*?All\s+rights\s+reserved\.?',
+            r'(?is)Copyright.*?Piero\s+Scaruffi.*?All\s+rights\s+reserved\.?',
+            r'(?is)All\s+photographs\s+are\s+property\s+of.*?provided\s+them',
+            r'(?is)What\s+is\s+unique\s+about\s+this\s+music\s+database\??',    
+            r'(?is)Terms\s+of\s+use',
+            
+            # I Menu spezzati su più righe
+            r'(?is)A\s+history\s+of\s+Jazz\s+Music',
+            r'(?is)See\s+also\s+the',
+            r'(?is)The\s+History\s+of\s+Rock\s+Music',
+            r'(?is)The\s+History\s+of\s+Pop\s+Music',
+            r'(?is)Main\s+jazz\s+page',
+            r'(?is)Jazz\s+musicians?',
+            r'(?is)To\s+purchase\s+the\s+book',
+            r'(?is)\(?These\s+are\s+excerpts\s+from\s+my\s+book\)?',
+            r'(?is)"?A\s+History\s+of\s+Jazz\s+Music"?',
+            r'(?is)Next\s+chapter',
+            r'(?is)Back\s+to\s+the\s+Index',
+            r'(?is)Back\s+to\s+the\s+[A-Za-z\s]+',
+            r'(?is)Links\s+to\s+other\s+sites',
+            
+            # Utility e Click
+            r'(?is)\(\s*(?:click|clicca|translation|translated|tradotto)[^)]+\)',
+            r'(?is)\(\s*Copyright[^)]+\)'
         ]
 
         # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")

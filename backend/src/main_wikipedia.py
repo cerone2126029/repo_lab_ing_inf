@@ -1,34 +1,49 @@
 import asyncio
-from parsers.wikipedia import WikipediaParser 
+import json
+import sys
+import os
+from pathlib import Path
+
+# Aggiungiamo la cartella src al path per evitare errori di import
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from parsers.wikipedia import WikipediaParser
 
 async def main():
-    print("Inizializzazione del WikipediaParser...")
+    # 1. Definiamo gli URL da parsare PRIMA di chiamare la classe
+    wikipedia_urls = [
+        "https://en.wikipedia.org/wiki/Giuseppe_Compagnoni",
+        "https://en.wikipedia.org/wiki/Lake_Bracciano",
+        "https://en.wikipedia.org/wiki/Emblem_of_Italy",
+        "https://en.wikipedia.org/wiki/Prince_of_Piedmont",
+        "https://en.wikipedia.org/wiki/SS_Alba-Audace_Roma"
+    ]
+
+    print("=" * 80)
+    print("🏛️ AVVIO PIPELINE PARSING WIKIPEDIA")
+    print("=" * 80)
+
+    # 2. Passiamo gli URL alla classe per evitare il TypeError
     parser = WikipediaParser()
 
-    test_url = "https://en.wikipedia.org/wiki/Sapienza_University_of_Rome"
+    # 3. Eseguiamo il parsing in parallelo
+    results = await parser.parse_batch(urls=wikipedia_urls)
     
-    print(f"Avvio crawling asincrono per: {test_url}\n")
+    # 4. Salvataggio sicuro nella cartella backend/results
+    base_dir = Path(__file__).resolve().parent.parent  # Punta a backend/
+    output_dir = base_dir / "results"
+    output_dir.mkdir(exist_ok=True)
     
-    result = await parser.parse_single(test_url)
-
-    if result["parsed_text"].startswith("ERRORE:"):
-        print("Si è verificato un errore durante il crawling:")
-        print(result["parsed_text"])
-        return
-
-    print("=== RISULTATI ESTRAZIONE ===")
-    print(f"URL Originale: {result['url']}")
-    print(f"Dominio:       {result['domain']}")
-    print(f"Titolo:        {result['title']}")
-    print("============================\n")
+    output_path = output_dir / "wikipedia_results.json" 
     
-    print("=== ANTEPRIMA TESTO PULITO (primi 20000 caratteri) ===")
-    print(result["parsed_text"][:20000])
-    print("\n[...] (testo troncato per l'anteprima)")
-    
-    # Controllo lunghezza totale
-    print(f"\nLunghezza totale del testo estratto: {len(result['parsed_text'])} caratteri")
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=4)
+        print(f"\n💾 Dati salvati con successo!")
+        print(f"   → Percorso: {output_path}")
+        print(f"   → Record totali: {len(results)}")
+    except IOError as e:
+        print(f"\n❌ Errore durante il salvataggio: {e}")
 
 if __name__ == "__main__":
-    # Esegue il loop asincrono
     asyncio.run(main())
