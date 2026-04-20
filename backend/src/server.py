@@ -3,7 +3,7 @@ import sys
 import os
 import re
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from typing import List, Dict, Any
 
 import uvicorn
@@ -12,7 +12,6 @@ from pydantic import BaseModel
 from bs4 import BeautifulSoup
 
 # Aggiungiamo 'src' al path per gli import dei moduli interni
-# server.py si trova in backend/src/
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from parsers.wikipedia import WikipediaParser
@@ -20,7 +19,7 @@ from parsers.scaruffi import ScaruffiParser
 from evaluator import token_level_eval
 
 # =====================================================================
-# CONFIGURAZIONE E MODELLI
+# CONFIGURAZIONE E MODELLI (PYDANTIC)
 # =====================================================================
 
 app = FastAPI(
@@ -29,7 +28,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Percorso dinamico alla cartella gold standard (progetto/gs_data/)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GS_DIR = BASE_DIR / "gs_data"
 
@@ -42,12 +40,16 @@ class EvaluateRequest(BaseModel):
     parsed_text: str
     gold_text: str
 
+# NUOVO MODELLO PER POST /parse (Slide 2)
+class ParseRequest(BaseModel):
+    url: str
+    html_text: str
+
 # =====================================================================
 # UTILITY FUNCTIONS
 # =====================================================================
 
 def get_domain_config(url_or_domain: str, is_url: bool = True):
-    """Identifica il parser e il file GS corretto."""
     domain = urlparse(url_or_domain).netloc.lower() if is_url else url_or_domain.lower()
     
     if "wikipedia.org" in domain:
@@ -57,7 +59,6 @@ def get_domain_config(url_or_domain: str, is_url: bool = True):
     return None, None
 
 def remove_markdown(text: str) -> str:
-    """Rimuove la sintassi Markdown per l'evaluation (Slide 29)."""
     if not text: return ""
     text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)
     text = re.sub(r'(\*|_)(.*?)\1', r'\2', text)
@@ -67,17 +68,15 @@ def remove_markdown(text: str) -> str:
     return text.strip()
 
 # =====================================================================
-# ENDPOINT API (SLIDE 24-30)
+# ENDPOINT API
 # =====================================================================
 
 @app.get("/domains")
 def get_domains():
-    """Restituisce la lista dei domini supportati (Slide 26)."""
     return {"domains": SUPPORTED_DOMAINS}
 
 @app.get("/parse")
-async def parse(url: str = Query(..., description="URL da analizzare")):
-    """Esegue il parsing di un documento (Slide 25)."""
+async def get_parse(url: str = Query(..., description="URL da analizzare")):
     domain_type, _ = get_domain_config(url)
     if not domain_type:
         raise HTTPException(status_code=400, detail="Dominio non supportato.")
@@ -85,7 +84,6 @@ async def parse(url: str = Query(..., description="URL da analizzare")):
     parser = WikipediaParser() if domain_type == "wikipedia" else ScaruffiParser()
     
     try:
-        # Usiamo parse_batch passandogli una lista con un solo URL
         results = await parser.parse_batch(urls=[url])
         if not results:
             raise HTTPException(status_code=404, detail="Impossibile recuperare l'URL.")
@@ -104,9 +102,60 @@ async def parse(url: str = Query(..., description="URL da analizzare")):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# NUOVO ENDPOINT: POST /parse (Come da Slide 2)
+@app.post("/parse")
+def post_parse(request: ParseRequest):
+    """Esegue il parser per un documento da html diretto."""
+    domain_type, _ = get_domain_config(request.url)
+    if not domain_type:
+        raise HTTPException(status_code=400, detail="Dominio non supportato.")
+
+    parser = WikipediaParser() if domain_type == "wikipedia" else ScaruffiParser()
+    domain = urlparse(request.url).netloc
+    soup = BeautifulSoup(request.html_text, "html.parser")
+    
+    title = ""
+    parsed_md = ""
+
+    if domain_type == "wikipedia":
+        # Estrazione Titolo
+        title_tag = soup.find("h1", id="firstHeading") or soup.find("title")
+        if title_tag:
+            title = title_tag.get_text(strip=True).replace(" - Wikipedia", "")
+        else:
+            if "/wiki/" in request.url:
+                title = unquote(request.url.split("/wiki/")[-1]).replace("_", " ")
+
+        # Simulazione pulizia Offline per Wikipedia
+        for tag in soup.find_all(['nav', 'footer', 'header', 'aside', 'figure']): tag.decompose()
+        junk_selectors = ".infobox, .infobox_v2, .mw-editsection, .navbox, #toc, .ambox, .hatnote, .thumb, .thumbinner, .gallery, .shortdescription, .tright, .tleft, .mw-halign-right, .mw-halign-left, .mw-halign-center, .reference"
+        for junk in soup.select(junk_selectors): junk.decompose()
+        for h2 in soup.find_all('h2'): h2.insert(0, "## ")
+        for h3 in soup.find_all('h3'): h3.insert(0, "### ")
+        
+        content = soup.select_one("#mw-content-text") or soup
+        raw_text = content.get_text(separator="\n")
+        parsed_md = parser.clean_wikipedia_markdown(raw_text)
+
+    else:
+        # Estrazione Titolo e Testo per Scaruffi
+        title_tag = soup.find("title")
+        if title_tag:
+            title = title_tag.get_text(strip=True)
+        parsed_md = parser.extract_scaruffi_text(request.html_text)
+
+    return {
+        "url": request.url,
+        "domain": domain,
+        "title": title,
+        "html_text": request.html_text,
+        "parsed_text": parsed_md
+    }
+
+
 @app.get("/gold_standard")
 def get_gs_entry(url: str = Query(..., description="URL di cui cercare il GS")):
-    """Restituisce l'entry del Gold Standard per un URL (Slide 27)."""
     _, gs_file = get_domain_config(url)
     if not gs_file:
         raise HTTPException(status_code=400, detail="Dominio non supportato.")
@@ -131,7 +180,6 @@ def get_gs_entry(url: str = Query(..., description="URL di cui cercare il GS")):
 
 @app.get("/full_gold_standard")
 def get_full_gs(domain: str = Query(..., description="Dominio completo")):
-    """Restituisce tutto il GS di un dominio (Slide 28)."""
     _, gs_file = get_domain_config(domain, is_url=False)
     if not gs_file:
         raise HTTPException(status_code=400, detail="Dominio non supportato.")
@@ -154,7 +202,6 @@ def get_full_gs(domain: str = Query(..., description="Dominio completo")):
 
 @app.post("/evaluate")
 def evaluate(request: EvaluateRequest):
-    """Confronta testo parsato e gold standard (Slide 29)."""
     clean_p = remove_markdown(request.parsed_text)
     clean_g = remove_markdown(request.gold_text)
     metrics = token_level_eval(clean_p, clean_g)
@@ -162,7 +209,6 @@ def evaluate(request: EvaluateRequest):
 
 @app.get("/full_gs_eval")
 def full_gs_eval(domain: str = Query(..., description="Dominio per evaluation totale")):
-    """Evaluation aggregata su tutto il GS di un dominio (Slide 30)."""
     domain_type, gs_file = get_domain_config(domain, is_url=False)
     if not domain_type:
         raise HTTPException(status_code=400, detail="Dominio non supportato.")
@@ -180,12 +226,12 @@ def full_gs_eval(domain: str = Query(..., description="Dominio per evaluation to
         gold = entry.get("gold_text", "")
         if not html or html == "INSERISCI_QUI_L_HTML_DA_CRAWL4AI" or not gold: continue
 
-        # Simulazione parsing offline
         if domain_type == "wikipedia":
             soup = BeautifulSoup(html, "html.parser")
             for tag in soup.find_all(['nav', 'footer', 'header', 'aside', 'figure']): tag.decompose()
-            for junk in soup.select(".infobox, .navbox, #toc, .reference"): junk.decompose()
+            for junk in soup.select(".infobox, .infobox_v2, .mw-editsection, .navbox, #toc, .ambox, .hatnote, .thumb, .thumbinner, .gallery, .shortdescription, .tright, .tleft, .mw-halign-right, .mw-halign-left, .mw-halign-center, .reference"): junk.decompose()
             for h2 in soup.find_all('h2'): h2.insert(0, "## ")
+            for h3 in soup.find_all('h3'): h3.insert(0, "### ")
             content = soup.select_one("#mw-content-text") or soup
             parsed = parser.clean_wikipedia_markdown(content.get_text(separator="\n"))
         else:
@@ -203,6 +249,5 @@ def full_gs_eval(domain: str = Query(..., description="Dominio per evaluation to
     }
 
 if __name__ == "__main__":
-    # Avvio sulla porta 8003 come richiesto dalla Slide 32
     print("🚀 Server in ascolto sulla porta 8003...")
     uvicorn.run("server:app", host="0.0.0.0", port=8003, reload=True)

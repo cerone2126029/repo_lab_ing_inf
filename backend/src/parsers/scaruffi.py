@@ -53,31 +53,42 @@ class ScaruffiParser(BaseWebParser):
         # 4. LA BLACKLIST (Sterminatore di Boilerplate di Scaruffi)
         # Un elenco di pattern Regex per disintegrare le frasi fastidiose ovunque siano
         spazzatura = [
-            # I blocchi Copyright (cattura tutto da TM/Copyright fino a reserved)
-            r'(?is)TM.*?Copyright.*?All\s+rights\s+reserved\.?',
-            r'(?is)Copyright.*?Piero\s+Scaruffi.*?All\s+rights\s+reserved\.?',
-            r'(?is)All\s+photographs\s+are\s+property\s+of.*?provided\s+them',
-            r'(?is)What\s+is\s+unique\s+about\s+this\s+music\s+database\??',    
-            r'(?is)Terms\s+of\s+use',
+            # --- Blocchi Multi-riga (Copyright) ---
+            # Usiamo [\s\S]*? che cattura anche gli a capo in modo sicuro
+            r'TM[\s\S]*?Copyright[\s\S]*?All\s+rights\s+reserved\.?',
+            r'Copyright[\s\S]*?(?:Piero|Paolo|P\.)?\s*Scaruffi[\s\S]*?All\s+rights\s+reserved\.?',
+            r'All\s+photographs\s+are\s+property\s+of[\s\S]*?provided\s+them',
+
+            # --- CECCHINI DI RIGA (Colpiscono solo i rimasugli orfani) ---
+            # ^ = inizio riga, $ = fine riga, [ \t]* = eventuali spazi orizzontali
+            r'^[ \t]*(?:by[ \t]+)?(?:Piero|Paolo|P\.)?[ \t]*Scaruffi[ \t]*$',
+            r'^[ \t]*(?:and|the|by)[ \t]*$',
+            r'^[ \t]*[\|\.,\(\)\-][ \t]*$',
+            r'^[ \t]*""?[ \t]*$',
+
+            # --- Frasi esatte e Menù ---
+            r'What\s+is\s+unique\s+about\s+this\s+music\s+database\??',    
+            r'Terms\s+of\s+use',
+            r'A\s+history\s+of\s+Jazz\s+Music',
+            r'See\s+also\s+the',
+            r'The\s+History\s+of\s+Rock\s+Music',
+            r'The\s+History\s+of\s+Pop\s+Music',
+            r'Main\s+jazz\s+page',
+            r'Jazz\s+musicians?',
+            r'To\s+purchase\s+the\s+book',
+            r'\(?These\s+are\s+excerpts\s+from\s+my\s+book\)?',
+            r'"?A\s+History\s+of\s+Jazz\s+Music"?',
+            r'Next\s+chapter',
+            r'Back\s+to\s+the\s+Index',
+            r'Back\s+to\s+the\s+[A-Za-z\s]+',
+            r'Links\s+to\s+other\s+sites',
             
-            # I Menu spezzati su più righe
-            r'(?is)A\s+history\s+of\s+Jazz\s+Music',
-            r'(?is)See\s+also\s+the',
-            r'(?is)The\s+History\s+of\s+Rock\s+Music',
-            r'(?is)The\s+History\s+of\s+Pop\s+Music',
-            r'(?is)Main\s+jazz\s+page',
-            r'(?is)Jazz\s+musicians?',
-            r'(?is)To\s+purchase\s+the\s+book',
-            r'(?is)\(?These\s+are\s+excerpts\s+from\s+my\s+book\)?',
-            r'(?is)"?A\s+History\s+of\s+Jazz\s+Music"?',
-            r'(?is)Next\s+chapter',
-            r'(?is)Back\s+to\s+the\s+Index',
-            r'(?is)Back\s+to\s+the\s+[A-Za-z\s]+',
-            r'(?is)Links\s+to\s+other\s+sites',
+            r'\(\s*(?:[Cc]lick|[Cc]licca|Translation|Translated|Tradotto)[^)]+\)',
+            r'\(\s*Copyright[^)]+\)',
             
-            # Utility e Click
-            r'(?is)\(\s*(?:click|clicca|translation|translated|tradotto)[^)]+\)',
-            r'(?is)\(\s*Copyright[^)]+\)'
+            # --- INCOLLA QUI LA NUOVA REGEX ---
+            r'(?im)^[ \t]*(by|and|the|piero\s+scaruffi|paolo\s+scaruffi|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$',
+            r'(?im)^[ \t]*(?:(?:by\s+)?(?:piero|paolo|p\.)\s+scaruffi|by|and|the|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$'
         ]
 
         # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")
