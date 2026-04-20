@@ -93,7 +93,7 @@ async def get_parse(url: str = Query(..., description="URL da analizzare")):
             raise HTTPException(status_code=400, detail=data["parsed_text"])
 
         return {
-            "url": data["url"],
+            "url": data.get("url", url),
             "domain": urlparse(url).netloc,
             "title": data.get("title", ""),
             "html_text": data.get("html_text", ""),
@@ -103,55 +103,47 @@ async def get_parse(url: str = Query(..., description="URL da analizzare")):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# NUOVO ENDPOINT: POST /parse (Come da Slide 2)
+# NUOVO ENDPOINT: POST /parse (Aggiornato con il trucco "raw:" di Crawl4AI)
 @app.post("/parse")
-def post_parse(request: ParseRequest):
-    """Esegue il parser per un documento da html diretto."""
+async def post_parse(request: ParseRequest):
+    """Esegue il parser per un documento da html diretto usando il prefisso raw:"""
     domain_type, _ = get_domain_config(request.url)
     if not domain_type:
         raise HTTPException(status_code=400, detail="Dominio non supportato.")
 
+    # Seleziona il parser corretto in base all'URL passato
     parser = WikipediaParser() if domain_type == "wikipedia" else ScaruffiParser()
-    domain = urlparse(request.url).netloc
-    soup = BeautifulSoup(request.html_text, "html.parser")
     
-    title = ""
-    parsed_md = ""
+    # IL TRUCCO DELLA SLIDE: Aggiungiamo "raw:" davanti all'HTML incollato
+    fake_url_for_crawler = f"raw:{request.html_text}"
 
-    if domain_type == "wikipedia":
-        # Estrazione Titolo
-        title_tag = soup.find("h1", id="firstHeading") or soup.find("title")
-        if title_tag:
-            title = title_tag.get_text(strip=True).replace(" - Wikipedia", "")
-        else:
-            if "/wiki/" in request.url:
-                title = unquote(request.url.split("/wiki/")[-1]).replace("_", " ")
-
-        # Simulazione pulizia Offline per Wikipedia
-        for tag in soup.find_all(['nav', 'footer', 'header', 'aside', 'figure']): tag.decompose()
-        junk_selectors = ".infobox, .infobox_v2, .mw-editsection, .navbox, #toc, .ambox, .hatnote, .thumb, .thumbinner, .gallery, .shortdescription, .tright, .tleft, .mw-halign-right, .mw-halign-left, .mw-halign-center, .reference"
-        for junk in soup.select(junk_selectors): junk.decompose()
-        for h2 in soup.find_all('h2'): h2.insert(0, "## ")
-        for h3 in soup.find_all('h3'): h3.insert(0, "### ")
+    try:
+        # Chiamiamo il parser esattamente come faremmo online!
+        results = await parser.parse_batch(urls=[fake_url_for_crawler])
         
-        content = soup.select_one("#mw-content-text") or soup
-        raw_text = content.get_text(separator="\n")
-        parsed_md = parser.clean_wikipedia_markdown(raw_text)
+        if not results:
+            raise HTTPException(status_code=500, detail="Il crawler ha fallito l'estrazione raw.")
+            
+        data = results[0]
 
-    else:
-        # Estrazione Titolo e Testo per Scaruffi
-        title_tag = soup.find("title")
-        if title_tag:
-            title = title_tag.get_text(strip=True)
-        parsed_md = parser.extract_scaruffi_text(request.html_text)
+        # Estrazione titolo di emergenza se Crawl4AI restituisce null
+        titolo = data.get("title")
+        if not titolo:
+            if domain_type == "wikipedia" and "/wiki/" in request.url:
+                titolo = unquote(request.url.split("/wiki/")[-1]).replace("_", " ")
+            else:
+                titolo = ""
 
-    return {
-        "url": request.url,
-        "domain": domain,
-        "title": title,
-        "html_text": request.html_text,
-        "parsed_text": parsed_md
-    }
+        # Restituiamo il JSON esattamente come chiede la specifica
+        return {
+            "url": request.url,  # Usiamo l'URL vero, non quello con "raw:"
+            "domain": urlparse(request.url).netloc,
+            "title": titolo,
+            "html_text": request.html_text,
+            "parsed_text": data.get("parsed_text", "")
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/gold_standard")
