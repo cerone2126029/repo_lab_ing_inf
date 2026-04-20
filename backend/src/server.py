@@ -368,10 +368,19 @@ app = FastAPI(
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GS_DIR = BASE_DIR / "gs_data"
 
-SUPPORTED_DOMAINS = [
-    "en.wikipedia.org", 
-    "www.scaruffi.com"
-]
+# Definizione percorsi
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DOMAINS_FILE = BASE_DIR / "domains.json"
+
+# Carichiamo i domini dal file JSON invece di scriverli a mano
+def load_supported_domains():
+    if DOMAINS_FILE.exists():
+        with open(DOMAINS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    # Ritorno di emergenza se il file non esiste
+    return ["en.wikipedia.org", "it.wikipedia.org", "www.scaruffi.com"]
+
+SUPPORTED_DOMAINS = load_supported_domains()
 
 class EvaluateRequest(BaseModel):
     parsed_text: str
