@@ -111,6 +111,7 @@ class BaseWebParser:
         }
     
 #=====wikipedia=====
+#=====wikipedia=====
 class WikipediaParser(BaseWebParser):
     
     # === PRE-COMPILAZIONE DELLE REGEX PER MASSIMIZZARE LE PRESTAZIONI ===
@@ -172,8 +173,23 @@ class WikipediaParser(BaseWebParser):
     def extract_data(self, result) -> Dict[str, Any]:
         data = super().extract_data(result)
         
+        # 1. TENTATIVO HTML: Cerca il vero tag <title> nella pagina
+        if not data.get("title") and result.html:
+            soup = BeautifulSoup(result.html, "html.parser")
+            title_tag = soup.find('title')
+            if title_tag:
+                data["title"] = title_tag.get_text(strip=True)
+
+        # 2. TENTATIVO URL (Emergenza): Se la pagina non ha il tag <title>
         self._extract_fallback_title(data)
 
+        # 3. SICUREZZA: Assicuriamoci che finisca sempre con " - Wikipedia" 
+        # (Serve solo se il titolo è stato preso dall'URL, perché il tag <title> lo ha già di suo!)
+        titolo = data.get("title", "")
+        if titolo and " - Wikipedia" not in titolo:
+            data["title"] = f"{titolo} - Wikipedia"
+
+        # 4. PULIZIA TESTO
         parsed_text = data.get("parsed_text", "")
         if result.success and parsed_text and not parsed_text.startswith("ERRORE"):
             data["parsed_text"] = self.clean_wikipedia_markdown(parsed_text)
@@ -215,8 +231,21 @@ class ScaruffiParser(BaseWebParser):
 
     def extract_data(self, result) -> Dict[str, Any]:
         data = super().extract_data(result)
+        
+        # --- NUOVO: Fallback di emergenza per il titolo ---
+        if not data.get("title") and result.html:
+            soup_title = BeautifulSoup(result.html, "html.parser")
+            # Cerca il primo tag title, h1, o h2
+            titolo_tag = soup_title.find(['title', 'h1', 'h2'])
+            if titolo_tag:
+                data["title"] = titolo_tag.get_text(strip=True)
+            else:
+                data["title"] = "" # Meglio stringa vuota che null
+        # --------------------------------------------------
+
         if result.success and result.html:
             data["parsed_text"] = self.extract_scaruffi_text(result.html)
+            
         return data
     
     def extract_scaruffi_text(self, html: str) -> str:
@@ -232,6 +261,17 @@ class ScaruffiParser(BaseWebParser):
         # 1. ELIMINAZIONE DEL RUMORE INVISIBILE E STRUTTURALE
         for tag in body.find_all(['script', 'style', 'nav', 'iframe', 'form']):
             tag.decompose()
+
+        # --- NUOVO: Rimuove i titoli enormi dal corpo del testo ---
+        # Uccide i normali h1 e h2
+        for tag in body.find_all(['h1', 'h2']):
+            tag.decompose()
+        # Uccide le scritte enormi fatte con il tag <font> (come nel caso dei Them)
+        for tag in body.find_all('font', size=lambda value: value in ['5', '6', '7']):
+            tag.decompose()
+        # ----------------------------------------------------------
+
+        # 2. EURISTICA DELLA DENSITA' DEI LINK...
 
         # 2. EURISTICA DELLA DENSITA' DEI LINK (Per eliminare le discografie e i menù grandi)
         for container in body.find_all(['table', 'ul']):
@@ -285,8 +325,8 @@ class ScaruffiParser(BaseWebParser):
             r'\(\s*Copyright[^)]+\)',
             
             # --- INCOLLA QUI LA NUOVA REGEX ---
-            r'(?im)^[ \t]*(by|and|the|piero\s+scaruffi|paolo\s+scaruffi|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$',
-            r'(?im)^[ \t]*(?:(?:by\s+)?(?:piero|paolo|p\.)\s+scaruffi|by|and|the|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$'
+            #r'(?im)^[ \t]*(by|and|the|piero\s+scaruffi|paolo\s+scaruffi|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$',
+            #r'(?im)^[ \t]*(?:(?:by\s+)?(?:piero|paolo|p\.)\s+scaruffi|by|and|the|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$'
         ]
 
         # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")
