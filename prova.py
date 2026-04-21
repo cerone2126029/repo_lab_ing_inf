@@ -3,7 +3,7 @@ import json
 from crawl4ai import AsyncWebCrawler
 
 async def scarica_html_sicuro():
-    url = "https://www.scaruffi.com/history/calendar.html"
+    url = "https://travel.state.gov/content/travel/en/replace-certify-docs/requesting-a-record/panama-canal-birth-or-death.html"
     print(f"Scaricando: {url}...")
     
     # Avviamo Crawl4AI
