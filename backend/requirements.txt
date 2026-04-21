@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+crawl4ai
+beautifulsoup4
+mistune

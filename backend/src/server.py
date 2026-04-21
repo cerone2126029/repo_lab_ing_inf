@@ -2,24 +2,401 @@ import json
 import sys
 import os
 import re
+import mistune
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 from typing import List, Dict, Any
-
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
+import string
 
 # Aggiungiamo 'src' al path per gli import dei moduli interni
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from parsers.wikipedia import WikipediaParser
-from parsers.scaruffi import ScaruffiParser
-from evaluator import token_level_eval
-
 # =====================================================================
-# CONFIGURAZIONE E MODELLI (PYDANTIC)
+# 1. CLASSI PARSER (Monolite)
+# =====================================================================
+#=====BaseWebParser=====
+class BaseWebParser:
+    def __init__(self):
+
+        # 1. Configurazione del browser comune a tutti i parser
+        self.browser_config = BrowserConfig(
+            headless=True,
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"      
+        )
+
+        # 2. Configurazione base per il crawling.
+        self.run_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            exclude_external_links=True,
+            remove_overlay_elements=False,
+            wait_for=5
+        )
+
+
+    async def parse_single(self, url: str) -> Dict[str, Any]:
+        """
+        FASE FINALE: Metodo usato dall'endpoint FastAPI per analizzare un solo URL.
+        Avvia il crawler per una singola pagina e restituisce il dizionario.
+        """
+        async with AsyncWebCrawler(config=self.browser_config) as crawler:
+            result = await crawler.arun(
+                url=url,
+                config=self.run_config
+            )
+            return self.extract_data(result)
+
+
+    async def parse_batch(self, urls: List[str]) -> List[Dict[str, Any]]:
+        """
+        FASE DI TESTING: Metodo usato dallo script locale per analizzare liste di URL
+        (utile per confrontare con il Gold Standard).
+        """
+        results_list = []
+        async with AsyncWebCrawler(config=self.browser_config) as crawler:
+            crawl_results = await crawler.arun_many(
+                urls=urls,
+                config=self.run_config
+            )
+
+
+            for result in crawl_results:
+                data = self.extract_data(result)
+                results_list.append(data)
+
+
+        return results_list
+
+
+    def extract_data(self, result) -> Dict[str, Any]:
+        """
+        Metodo base per l'estrazione. Crea la struttura dati richiesta dall'esonero.
+        Le classi figlie chiameranno super().extract_data(result) e applicheranno
+        le rifiniture testuali su data["parsed_text"].
+        """
+        # Calcolo sicuro del dominio
+        domain = urlparse(result.url).netloc if result.url else ""
+
+
+        # Gestione del fallimento della richiesta
+        if not result.success:
+            return {
+                "url": result.url,
+                "domain": domain,
+                "title": None,
+                "html_text": "",
+                "parsed_text": f"ERRORE: {result.error_message}"
+            }
+
+
+        # Estrazione sicura del titolo dai metadati
+        title = result.metadata.get("title") if result.metadata else None
+
+
+        # Estrazione del Markdown nativo generato da Crawl4AI
+        # (Usa result.markdown o result.extracted_content a seconda della versione esatta che hai)
+        raw_markdown = result.markdown if hasattr(result, 'markdown') and result.markdown else ""
+
+
+        return {
+            "url": result.url,
+            "domain": domain,
+            "title": title,
+            "html_text": result.html or "",
+            "parsed_text": raw_markdown.strip()
+        }
+    
+#=====wikipedia=====
+#=====wikipedia=====
+class WikipediaParser(BaseWebParser):
+    
+    # === PRE-COMPILAZIONE DELLE REGEX PER MASSIMIZZARE LE PRESTAZIONI ===
+    
+    _STOP_PATTERN = re.compile(
+        r'^#+\s*(References?|Notes?|See also|External links?|Further reading|Bibliography|Citations?).*$',
+        flags=re.IGNORECASE | re.MULTILINE
+    )
+
+    # Lista di tuple: (Pattern Regex Compilato, Stringa di Sostituzione)
+    _CLEANING_RULES = [
+        # 1. Distrugge i link delle note di Wikipedia
+        (re.compile(r'\[[^\]]*\]\s*\([^\)]*#cite_note[^\)]*\)', flags=re.IGNORECASE), ''),
+        # 2. Distrugge qualsiasi link vuoto rimasto
+        (re.compile(r'\[\s*\]\([^\)]+\)'), ''),
+        # 3. Elimina i [citation needed] e simili
+        (re.compile(r'_?\[citation needed\]_?', flags=re.IGNORECASE), ''),
+        (re.compile(r'\[Italian language\]', flags=re.IGNORECASE), ''),
+        # 4. Elimina note puramente testuali (es: [18]) isolate
+        (re.compile(r'(?<!\!)\[\d+\]'), ''),
+        (re.compile(r'(?<!\!)\[\s*[a-z]\s*\]', flags=re.IGNORECASE), ''),
+        # 5. Rimuove parentesi tonde vuote
+        (re.compile(r'\(\s*\)'), ''),
+        # 6. Didascalie residue e vecchi template
+        (re.compile(r'^!.*$', flags=re.MULTILINE), ''),
+        (re.compile(r'<sup[^>]*>.*?</sup>', flags=re.IGNORECASE | re.DOTALL), ''),
+        (re.compile(r'\{\{\s*.*?\}\}', flags=re.DOTALL), ''),
+        # 7. Frasi di servizio
+        (re.compile(r'^\s*This article (is|needs|may).*?\.$', flags=re.MULTILINE | re.IGNORECASE), ''),
+        (re.compile(r'^\s*This page (is|was).*?Wikipedia\.', flags=re.MULTILINE | re.IGNORECASE), ''),
+        (re.compile(r'Coordinates?:\s*.*$', flags=re.MULTILINE | re.IGNORECASE), ''),
+        # 8. Appiattisce i link validi rimasti `[Testo](url)` in puro `Testo`
+        (re.compile(r'(?<!\!)\[([^\]]+)\]\([^\)]+\)'), r'\1'),
+        # 9. Normalizzazione degli spazi e rimozione elenchi vuoti
+        (re.compile(r'\n{3,}'), '\n\n'),
+        (re.compile(r'^\s*[-*+]\s*$', flags=re.MULTILINE), '')
+    ]
+
+    def __init__(self):
+        super().__init__()
+       
+        # Formattazione leggibile per i selettori CSS
+        excluded_selectors = [
+            ".infobox", ".infobox_v2", ".mw-editsection", ".navbox", "#toc", 
+            ".ambox", ".hatnote", ".thumb", ".thumbinner", ".gallery", 
+            ".shortdescription", ".tright", ".tleft", ".mw-halign-right", 
+            ".mw-halign-left", ".mw-halign-center", ".reference"
+        ]
+
+        self.run_config = CrawlerRunConfig(
+            magic=True,
+            cache_mode=CacheMode.BYPASS,
+            exclude_external_links=True,
+            css_selector="#mw-content-text", 
+            excluded_tags=["nav", "footer", "header", "aside", "figure"],
+            excluded_selector=", ".join(excluded_selectors)
+        )
+
+    def extract_data(self, result) -> Dict[str, Any]:
+        data = super().extract_data(result)
+        
+        # 1. TENTATIVO HTML: Cerca il vero tag <title> nella pagina
+        if not data.get("title") and result.html:
+            soup = BeautifulSoup(result.html, "html.parser")
+            title_tag = soup.find('title')
+            if title_tag:
+                data["title"] = title_tag.get_text(strip=True)
+
+        # 2. TENTATIVO URL (Emergenza): Se la pagina non ha il tag <title>
+        self._extract_fallback_title(data)
+
+        # 3. SICUREZZA: Assicuriamoci che finisca sempre con " - Wikipedia" 
+        # (Serve solo se il titolo è stato preso dall'URL, perché il tag <title> lo ha già di suo!)
+        titolo = data.get("title", "")
+        if titolo and " - Wikipedia" not in titolo:
+            data["title"] = f"{titolo} - Wikipedia"
+
+        # 4. PULIZIA TESTO
+        parsed_text = data.get("parsed_text", "")
+        if result.success and parsed_text and not parsed_text.startswith("ERRORE"):
+            data["parsed_text"] = self.clean_wikipedia_markdown(parsed_text)
+       
+        return data
+
+    def _extract_fallback_title(self, data: Dict[str, Any]) -> None:
+        """Recupera il titolo dall'URL in caso di fallimento dei selettori CSS."""
+        url = data.get("url", "")
+        if not data.get("title") and "/wiki/" in url:
+            raw_title = url.split("/wiki/")[-1]
+            data["title"] = unquote(raw_title).replace("_", " ")
+
+    def clean_wikipedia_markdown(self, text: str) -> str:
+        if not text:
+            return ""
+
+        # 1. Applica la ghigliottina finale
+        match = self._STOP_PATTERN.search(text)
+        if match:
+            text = text[:match.start()]
+
+        # 2. Applica sequenzialmente tutte le regole di pulizia
+        for pattern, replacement in self._CLEANING_RULES:
+            text = pattern.sub(replacement, text)
+       
+        return text.strip()
+    
+#=====scaruffi=====
+class ScaruffiParser(BaseWebParser):
+
+    def __init__(self):
+        super().__init__()
+        self.run_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            exclude_external_links=True,
+            remove_overlay_elements=False
+        )
+
+    def extract_data(self, result) -> Dict[str, Any]:
+        data = super().extract_data(result)
+        
+        # --- NUOVO: Fallback di emergenza per il titolo ---
+        if not data.get("title") and result.html:
+            soup_title = BeautifulSoup(result.html, "html.parser")
+            # Cerca il primo tag title, h1, o h2
+            titolo_tag = soup_title.find(['title', 'h1', 'h2'])
+            if titolo_tag:
+                data["title"] = titolo_tag.get_text(strip=True)
+            else:
+                data["title"] = "" # Meglio stringa vuota che null
+        # --------------------------------------------------
+
+        if result.success and result.html:
+            data["parsed_text"] = self.extract_scaruffi_text(result.html)
+            
+        return data
+    
+    def extract_scaruffi_text(self, html: str) -> str:
+        if not html:
+            return ""
+
+        soup = BeautifulSoup(html, "html.parser")
+        body = soup.find('body')
+        
+        if not body:
+            return "Nessun tag <body> trovato."
+
+        # 1. ELIMINAZIONE DEL RUMORE INVISIBILE E STRUTTURALE
+        for tag in body.find_all(['script', 'style', 'nav', 'iframe', 'form']):
+            tag.decompose()
+
+        # --- NUOVO: Rimuove i titoli enormi dal corpo del testo ---
+        # Uccide i normali h1 e h2
+        for tag in body.find_all(['h1', 'h2']):
+            tag.decompose()
+        # Uccide le scritte enormi fatte con il tag <font> (come nel caso dei Them)
+        for tag in body.find_all('font', size=lambda value: value in ['5', '6', '7']):
+            tag.decompose()
+        # ----------------------------------------------------------
+
+        # 2. EURISTICA DELLA DENSITA' DEI LINK...
+
+        # 2. EURISTICA DELLA DENSITA' DEI LINK (Per eliminare le discografie e i menù grandi)
+        for container in body.find_all(['table', 'ul']):
+            links = container.find_all('a')
+            if not links:
+                continue
+            
+            text_in_links = sum(len(a.get_text(strip=True)) for a in links)
+            total_text = len(container.get_text(strip=True))
+            
+            if total_text > 0 and (text_in_links / total_text) > 0.40:
+                container.decompose()
+
+        # 3. ESTRAZIONE DEL TESTO
+        raw_text = body.get_text(separator="\n", strip=True)
+
+        # 4. LA BLACKLIST (Sterminatore di Boilerplate di Scaruffi)
+        # Un elenco di pattern Regex per disintegrare le frasi fastidiose ovunque siano
+        spazzatura = [
+            # --- Blocchi Multi-riga (Copyright) ---
+            # Usiamo [\s\S]*? che cattura anche gli a capo in modo sicuro
+            r'TM[\s\S]*?Copyright[\s\S]*?All\s+rights\s+reserved\.?',
+            r'Copyright[\s\S]*?(?:Piero|Paolo|P\.)?\s*Scaruffi[\s\S]*?All\s+rights\s+reserved\.?',
+            r'All\s+photographs\s+are\s+property\s+of[\s\S]*?provided\s+them',
+
+            # --- CECCHINI DI RIGA (Colpiscono solo i rimasugli orfani) ---
+            # ^ = inizio riga, $ = fine riga, [ \t]* = eventuali spazi orizzontali
+            r'^[ \t]*(?:by[ \t]+)?(?:Piero|Paolo|P\.)?[ \t]*Scaruffi[ \t]*$',
+            r'^[ \t]*(?:and|the|by)[ \t]*$',
+            r'^[ \t]*[\|\.,\(\)\-][ \t]*$',
+            r'^[ \t]*""?[ \t]*$',
+
+            # --- Frasi esatte e Menù ---
+            r'What\s+is\s+unique\s+about\s+this\s+music\s+database\??',    
+            r'Terms\s+of\s+use',
+            r'A\s+history\s+of\s+Jazz\s+Music',
+            r'See\s+also\s+the',
+            r'The\s+History\s+of\s+Rock\s+Music',
+            r'The\s+History\s+of\s+Pop\s+Music',
+            r'Main\s+jazz\s+page',
+            r'Jazz\s+musicians?',
+            r'To\s+purchase\s+the\s+book',
+            r'\(?These\s+are\s+excerpts\s+from\s+my\s+book\)?',
+            r'"?A\s+History\s+of\s+Jazz\s+Music"?',
+            r'Next\s+chapter',
+            r'Back\s+to\s+the\s+Index',
+            r'Back\s+to\s+the\s+[A-Za-z\s]+',
+            r'Links\s+to\s+other\s+sites',
+            
+            r'\(\s*(?:[Cc]lick|[Cc]licca|Translation|Translated|Tradotto)[^)]+\)',
+            r'\(\s*Copyright[^)]+\)',
+            
+            # --- INCOLLA QUI LA NUOVA REGEX ---
+            #r'(?im)^[ \t]*(by|and|the|piero\s+scaruffi|paolo\s+scaruffi|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$',
+            #r'(?im)^[ \t]*(?:(?:by\s+)?(?:piero|paolo|p\.)\s+scaruffi|by|and|the|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$'
+        ]
+
+        # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")
+        for pattern in spazzatura:
+            raw_text = re.sub(pattern, '', raw_text, flags=re.IGNORECASE)
+
+        # 5. PULIZIA FINALE E IMPAGINAZIONE
+        clean_lines = []
+        for line in raw_text.split('\n'):
+            line = line.strip()
+            
+            # Ignoriamo le righe vuote e i "rimasugli" grafici come la barra |
+            if line and line != "|":
+                clean_lines.append(line)
+
+        final_text = "\n\n".join(clean_lines)
+
+        return final_text
+    
+# =====================================================================
+# 2. SISTEMA DI VALUTAZIONE
+# =====================================================================
+def tokenize(text: str) -> set:
+    """Pulisce il testo e lo trasforma in un set di token (parole)."""
+    if not text:
+        return set()
+    
+    # Crea una tabella di traduzione per rimuovere la punteggiatura
+    translator = str.maketrans('', '', string.punctuation)
+    
+    # Mette in minuscolo e rimuove la punteggiatura
+    clean_text = text.lower().translate(translator)
+    
+    # Divide il testo in parole. Usiamo set() per avere un insieme univoco di token
+    return set(clean_text.split())
+
+def token_level_eval(parsed_text: str, gold_text: str) -> dict:
+    """Calcola Precision, Recall e F1-Score tra due testi."""
+    parsed_tokens = tokenize(parsed_text)
+    gold_tokens = tokenize(gold_text)
+
+    # Gestione dei casi limite (testi vuoti)
+    if not parsed_tokens and not gold_tokens:
+        return {"precision": 1.0, "recall": 1.0, "f1": 1.0}
+    if not parsed_tokens or not gold_tokens:
+        return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
+
+    # True Positives: parole presenti in entrambi i set
+    common_tokens = parsed_tokens.intersection(gold_tokens)
+    tp = len(common_tokens)
+
+    # Precision = Parole Corrette / Totale Parole Estratte
+    precision = tp / len(parsed_tokens)
+
+    # Recall = Parole Corrette / Totale Parole nel Gold Standard
+    recall = tp / len(gold_tokens)
+
+    # F1-Score = Media armonica tra Precision e Recall
+    if precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = 2 * (precision * recall) / (precision + recall)
+
+    return {
+        "precision": round(precision, 4),
+        "recall": round(recall, 4),
+        "f1": round(f1, 4)
+    }
+# =====================================================================
+# 3. CONFIGURAZIONE E MODELLI (PYDANTIC)
 # =====================================================================
 
 app = FastAPI(
@@ -31,10 +408,19 @@ app = FastAPI(
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GS_DIR = BASE_DIR / "gs_data"
 
-SUPPORTED_DOMAINS = [
-    "en.wikipedia.org", 
-    "www.scaruffi.com"
-]
+# Definizione percorsi
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DOMAINS_FILE = BASE_DIR / "domains.json"
+
+# Carichiamo i domini dal file JSON invece di scriverli a mano
+def load_supported_domains():
+    if DOMAINS_FILE.exists():
+        with open(DOMAINS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    # Ritorno di emergenza se il file non esiste
+    return ["en.wikipedia.org", "it.wikipedia.org", "www.scaruffi.com"]
+
+SUPPORTED_DOMAINS = load_supported_domains()
 
 class EvaluateRequest(BaseModel):
     parsed_text: str
@@ -46,7 +432,7 @@ class ParseRequest(BaseModel):
     html_text: str
 
 # =====================================================================
-# UTILITY FUNCTIONS
+# 4. UTILITY FUNCTIONS
 # =====================================================================
 
 def get_domain_config(url_or_domain: str, is_url: bool = True):
@@ -58,17 +444,28 @@ def get_domain_config(url_or_domain: str, is_url: bool = True):
         return "scaruffi", "dominio_scaruffi_gs.json"
     return None, None
 
-def remove_markdown(text: str) -> str:
-    if not text: return ""
-    text = re.sub(r'(\*\*|__)(.*?)\1', r'\2', text)
-    text = re.sub(r'(\*|_)(.*?)\1', r'\2', text)
-    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)
-    text = re.sub(r'#+\s*', '', text)
-    text = re.sub(r'\||---|:---:|^-\s*', ' ', text, flags=re.MULTILINE)
+def remove_markdown(md: str) -> str:
+    """
+    Rimuove il Markdown da una stringa, restituendo solo il testo pulito.
+    Usa la libreria mistune per convertire il Markdown in HTML, poi BeautifulSoup per estrarre solo il testo.
+    """
+    if not md: 
+        return ""
+        
+    html = mistune.html(md)
+    soup = BeautifulSoup(html, "html.parser")
+    
+    # rimuove i tag lasciando il testo esattamente in-place (nessun separatore aggiunto, mantiene punteggiatura)
+    for tag in soup.find_all(True):
+        tag.unwrap()
+        
+    text = re.sub(r'[ \t]+', ' ', str(soup))    # collassa spazi orizzontali (non \n)
+    text = re.sub(r'\n+', '\n', text)           # collassa nuove linee multiple in una sola
+    
     return text.strip()
 
 # =====================================================================
-# ENDPOINT API
+# 5. ENDPOINT API
 # =====================================================================
 
 @app.get("/domains")
