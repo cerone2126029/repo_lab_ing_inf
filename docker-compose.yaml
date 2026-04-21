@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: esonero_backend
+    ports:
+      - "8003:8003"
+    # Alcuni crawler richiedono un po' di memoria in più
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: esonero_frontend
+    ports:
+      - "8004:8004"
+    environment:
+      # Questa variabile dice al frontend di chiamare il backend 
+      # usando il nome del container invece di "localhost"
+      - BACKEND_URL=http://backend:8003
+    depends_on:
+      - backend
