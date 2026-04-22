@@ -1,7 +1,7 @@
-# Usa un'immagine Python ufficiale
+# Immagine Python ufficiale
 FROM python:3.10-slim
 
-# Stessa directory di lavoro per coerenza dei path relativi
+# Directory di lavoro per coerenza dei path relativi
 WORKDIR /progetto
 
 # Copiamo i requisiti e li installiamo

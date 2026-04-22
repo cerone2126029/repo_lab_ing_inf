@@ -19,7 +19,7 @@ class ScaruffiParser(BaseWebParser):
     def extract_data(self, result) -> Dict[str, Any]:
         data = super().extract_data(result)
         
-        # --- NUOVO: Fallback di emergenza per il titolo ---
+        # Fallback di emergenza per il titolo ---
         if not data.get("title") and result.html:
             soup_title = BeautifulSoup(result.html, "html.parser")
             # Cerca il primo tag title, h1, o h2
@@ -27,8 +27,7 @@ class ScaruffiParser(BaseWebParser):
             if titolo_tag:
                 data["title"] = titolo_tag.get_text(strip=True)
             else:
-                data["title"] = "" # Meglio stringa vuota che null
-        # --------------------------------------------------
+                data["title"] = "" 
 
         if result.success and result.html:
             data["parsed_text"] = self.extract_scaruffi_text(result.html)
@@ -49,16 +48,13 @@ class ScaruffiParser(BaseWebParser):
         for tag in body.find_all(['script', 'style', 'nav', 'iframe', 'form']):
             tag.decompose()
 
-        # --- NUOVO: Rimuove i titoli enormi dal corpo del testo ---
+        # Rimuove i titoli enormi dal corpo del testo ---
         # Uccide i normali h1 e h2
         for tag in body.find_all(['h1', 'h2']):
             tag.decompose()
         # Uccide le scritte enormi fatte con il tag <font> (come nel caso dei Them)
         for tag in body.find_all('font', size=lambda value: value in ['5', '6', '7']):
             tag.decompose()
-        # ----------------------------------------------------------
-
-        # 2. EURISTICA DELLA DENSITA' DEI LINK...
 
         # 2. EURISTICA DELLA DENSITA' DEI LINK (Per eliminare le discografie e i menù grandi)
         for container in body.find_all(['table', 'ul']):
@@ -78,20 +74,13 @@ class ScaruffiParser(BaseWebParser):
         # 4. LA BLACKLIST (Sterminatore di Boilerplate di Scaruffi)
         # Un elenco di pattern Regex per disintegrare le frasi fastidiose ovunque siano
         spazzatura = [
-            # --- Blocchi Multi-riga (Copyright) ---
-            # Usiamo [\s\S]*? che cattura anche gli a capo in modo sicuro
             r'TM[\s\S]*?Copyright[\s\S]*?All\s+rights\s+reserved\.?',
             r'Copyright[\s\S]*?(?:Piero|Paolo|P\.)?\s*Scaruffi[\s\S]*?All\s+rights\s+reserved\.?',
             r'All\s+photographs\s+are\s+property\s+of[\s\S]*?provided\s+them',
-
-            # --- CECCHINI DI RIGA (Colpiscono solo i rimasugli orfani) ---
-            # ^ = inizio riga, $ = fine riga, [ \t]* = eventuali spazi orizzontali
             r'^[ \t]*(?:by[ \t]+)?(?:Piero|Paolo|P\.)?[ \t]*Scaruffi[ \t]*$',
             r'^[ \t]*(?:and|the|by)[ \t]*$',
             r'^[ \t]*[\|\.,\(\)\-][ \t]*$',
             r'^[ \t]*""?[ \t]*$',
-
-            # --- Frasi esatte e Menù ---
             r'What\s+is\s+unique\s+about\s+this\s+music\s+database\??',    
             r'Terms\s+of\s+use',
             r'A\s+history\s+of\s+Jazz\s+Music',
@@ -107,13 +96,8 @@ class ScaruffiParser(BaseWebParser):
             r'Back\s+to\s+the\s+Index',
             r'Back\s+to\s+the\s+[A-Za-z\s]+',
             r'Links\s+to\s+other\s+sites',
-            
             r'\(\s*(?:[Cc]lick|[Cc]licca|Translation|Translated|Tradotto)[^)]+\)',
             r'\(\s*Copyright[^)]+\)',
-            
-            # --- INCOLLA QUI LA NUOVA REGEX ---
-            #r'(?im)^[ \t]*(by|and|the|piero\s+scaruffi|paolo\s+scaruffi|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$',
-            #r'(?im)^[ \t]*(?:(?:by\s+)?(?:piero|paolo|p\.)\s+scaruffi|by|and|the|all\s+rights\s+reserved\.?|[\(\)\"\|\.,\-]+)[ \t]*$'
         ]
 
         # Applichiamo la blacklist: sostituiamo ogni frase trovata con il vuoto ("")

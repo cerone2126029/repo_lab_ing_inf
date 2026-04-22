@@ -9,12 +9,15 @@ from pydantic import BaseModel
 from bs4 import BeautifulSoup
 from parsers.wikipediaparser import WikipediaParser
 from parsers.scaruffiparser import ScaruffiParser
-from parsers.travelstategov import TravelStateGov # <-- Assicurati che la classe si chiami esattamente così nel tuo file!
+from parsers.travelstategov import TravelStateGov 
 from evaluator import token_level_eval, remove_markdown
 
 # Aggiungiamo 'src' al path per gli import dei moduli interni
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# =====================================================================
+# 1. PREPARAZIONI VARIABILI E CLASSI
+# =====================================================================
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GS_DIR = BASE_DIR / "gs_data"
 DOMAINS_FILE = BASE_DIR / "domains.json"
@@ -31,7 +34,7 @@ class EvaluateRequest(BaseModel):
 
 
 # =====================================================================
-# 4. UTILITY FUNCTIONS
+# 2. FUNZIONI UTILI
 # =====================================================================
 def load_supported_domains():
     """Legge la lista dei domini dal file JSON nella root del progetto."""
@@ -57,7 +60,7 @@ def get_domain_config(url_or_domain: str, is_url: bool = True):
     return None, None
 
 # =====================================================================
-# 5. ENDPOINT API
+# 3. FAST API
 # =====================================================================
 app = FastAPI(
     title="Web Scraper & Evaluator API",
@@ -65,6 +68,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# =====================================================================
+# 4. CHIAMATE GET E POST
+# =====================================================================
 @app.get("/domains")
 def get_domains():
     return {"domains": SUPPORTED_DOMAINS}
@@ -103,8 +109,6 @@ async def get_parse(url: str = Query(..., description="URL da analizzare")):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# NUOVO ENDPOINT: POST /parse (Aggiornato con il trucco "raw:" di Crawl4AI)
 @app.post("/parse")
 async def post_parse(request: ParseRequest):
     """Esegue il parser per un documento da html diretto usando il prefisso raw:"""
@@ -121,7 +125,7 @@ async def post_parse(request: ParseRequest):
         parser = TravelStateGov()
     else:
         raise HTTPException(status_code=400, detail="Parser non implementato per questo dominio.")
-    # IL TRUCCO DELLA SLIDE: Aggiungiamo "raw:" davanti all'HTML incollato
+    # Aggiungiamo "raw:" davanti all'HTML incollato
     fake_url_for_crawler = f"raw:{request.html_text}"
 
     try:
@@ -262,6 +266,9 @@ def full_gs_eval(domain: str = Query(..., description="Dominio per evaluation to
         "x_eval": {}
     }
 
+# =====================================================================
+# 5. MAIN
+# =====================================================================
 if __name__ == "__main__":
     print("🚀 Server in ascolto sulla porta 8003...")
     uvicorn.run("server:app", host="0.0.0.0", port=8003, reload=True)

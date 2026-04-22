@@ -48,12 +48,11 @@ class TravelStateGov(BaseWebParser):
             data["parsed_text"] = self.clean_travelstategov_markdown(parsed_text)
        
         return data
-
+    #recupero del titolo dall'url, se fallisce l'estrapolazione da <title>
     def _extract_fallback_title(self, data: Dict[str, Any]) -> None:
         """Recupera il titolo dall'URL in caso di fallimento dei selettori CSS."""
         url = data.get("url", "")
         if not data.get("title") and ".html" in url:
-            # Es: estrae "Italy" da ".../Italy.html"
             raw_title = url.split("/")[-1].replace(".html", "")
             data["title"] = unquote(raw_title).replace("-", " ")
 

@@ -1,6 +1,8 @@
+#Versione di docker compose
 version: '3.8'
 
 services:
+  #GESTIONE BACKEND
   backend:
     build:
       context: .
@@ -8,12 +10,11 @@ services:
     container_name: esonero_backend
     ports:
       - "8003:8003"
-    # Alcuni crawler richiedono un po' di memoria in più
     deploy:
       resources:
         limits:
           memory: 2G
-
+  #GESTIONE FRONTEND
   frontend:
     build:
       context: .
@@ -22,8 +23,6 @@ services:
     ports:
       - "8004:8004"
     environment:
-      # Questa variabile dice al frontend di chiamare il backend 
-      # usando il nome del container invece di "localhost"
       - BACKEND_URL=http://backend:8003
     depends_on:
       - backend

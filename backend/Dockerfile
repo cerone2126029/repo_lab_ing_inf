@@ -1,7 +1,7 @@
-# Usa un'immagine Python ufficiale
+# Immagine Python ufficiale
 FROM python:3.10-slim
 
-# Impostiamo la directory di lavoro chiamandola come la root del progetto
+# Directory di lavoro chiamata come la root del progetto
 WORKDIR /progetto
 
 # Copiamo prima solo il file dei requisiti (per ottimizzare la cache di Docker)
