@@ -1,27 +1,48 @@
-import json
-import sys
 import os
+import sys
+import json
 from pathlib import Path
 from urllib.parse import urlparse, unquote
+
+# =====================================================================
+# 0. FIX PERCORSI (Deve stare prima di ogni import locale!)
+# =====================================================================
+# Otteniamo la cartella 'src' dove si trova questo file
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.append(CURRENT_DIR)
+
+# Aggiungiamo anche la cartella superiore (backend) per sicurezza
+BACKEND_DIR = os.path.dirname(CURRENT_DIR)
+if BACKEND_DIR not in sys.path:
+    sys.path.append(BACKEND_DIR)
+
+# =====================================================================
+# 1. IMPORT MODULI (Ora funzioneranno)
+# =====================================================================
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
+
+# Import dai tuoi file
 from parsers.wikipediaparser import WikipediaParser
 from parsers.scaruffiparser import ScaruffiParser
 from parsers.travelstategov import TravelStateGov 
 from evaluator import token_level_eval, remove_markdown
 
-# Aggiungiamo 'src' al path per gli import dei moduli interni
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 # =====================================================================
-# 1. PREPARAZIONI VARIABILI E CLASSI
+# 2. CONFIGURAZIONI PERCORSI
 # =====================================================================
+# In Docker la struttura è /progetto/backend/src/server.py
+# Quindi .parent.parent.parent risale a /progetto
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 GS_DIR = BASE_DIR / "gs_data"
 DOMAINS_FILE = BASE_DIR / "domains.json"
 
+# =====================================================================
+# 3. MODELLI E FUNZIONI
+# =====================================================================
 class ParseRequest(BaseModel):
     """Modello per la richiesta POST /parse"""
     url: str

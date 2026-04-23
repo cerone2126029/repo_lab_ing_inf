@@ -19,4 +19,4 @@ COPY gs_data/ ./gs_data/
 EXPOSE 8004
 
 # Comando per avviare il frontend
-CMD ["python", "frontend/src/frontend.py"]
+CMD ["python", "-m", "uvicorn", "frontend.src.frontend:app", "--host", "0.0.0.0", "--port", "8004"]

@@ -7,7 +7,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: esonero_backend
+    container_name: esonero-backend
     ports:
       - "8003:8003"
     deploy:
@@ -19,7 +19,7 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
-    container_name: esonero_frontend
+    container_name: esonero-frontend
     ports:
       - "8004:8004"
     environment:
