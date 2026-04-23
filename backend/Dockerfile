@@ -23,4 +23,4 @@ COPY gs_data/ ./gs_data/
 EXPOSE 8003
 
 # Comando per avviare il server (eseguito dalla root /progetto)
-CMD ["python", "-m", "uvicorn", "backend.src.server:app", "--host", "0.0.0.0", "--port", "8003"]
+CMD ["python", "backend/src/server.py"]
