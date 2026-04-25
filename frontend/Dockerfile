@@ -4,6 +4,9 @@ FROM python:3.10-slim
 # Directory di lavoro per coerenza dei path relativi
 WORKDIR /progetto
 
+# Diciamo a Python di considerare /progetto come cartella base per le importazioni
+ENV PYTHONPATH=/progetto
+
 # Copiamo i requisiti e li installiamo
 COPY frontend/requirements.txt ./frontend/
 RUN pip install --no-cache-dir -r frontend/requirements.txt
@@ -18,5 +21,5 @@ COPY gs_data/ ./gs_data/
 # Esponiamo la porta esatta richiesta dalla slide
 EXPOSE 8004
 
-# Comando per avviare il frontend
-CMD ["python", "frontend/src/frontend.py"]
+# Comando corretto per avviare il server web dalla root
+CMD ["python", "-m", "uvicorn", "frontend.src.frontend:app", "--host", "0.0.0.0", "--port", "8004"]

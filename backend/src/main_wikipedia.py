@@ -1,13 +1,13 @@
 import asyncio
-from parsers.travelstategov import TravelStateGov
+from parsers.wikipediaparser import WikipediaParser
 
 async def main():
-    # Scegli un URL di travel.state.gov da testare
-    url = "https://careers.state.gov/about/reasonable-accommodations/"
-    print(f"Avviando il parsing di Travel.State.Gov per: {url}\nAttendere...")
+    # Scegli un URL di Wikipedia da testare
+    url = "https://en.wikipedia.org/wiki/Sapienza_University_of_Rome"
+    print(f"Avviando il parsing di Wikipedia per: {url}\nAttendere...")
     
     # Inizializza il parser
-    parser = TravelStateGov()
+    parser = WikipediaParser()
     
     # Esegui il parsing (metodo asincrono)
     risultato = await parser.parse_single(url)
@@ -21,6 +21,7 @@ async def main():
     print(f"📏 LUNGHEZZA TESTO ESTRATTO: {len(testo_pulito)} caratteri")
     
     print("\n--- INIZIO TESTO (prime 1000 battute) ---")
+    # Stampa le prime 1000 battute per non intaccare il terminale
     print(testo_pulito[:1000])
     print("...\n" + "="*50)
 

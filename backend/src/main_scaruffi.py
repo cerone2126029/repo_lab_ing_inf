@@ -1,13 +1,13 @@
 import asyncio
-from parsers.travelstategov import TravelStateGov
+from parsers.scaruffiparser import ScaruffiParser
 
 async def main():
-    # Scegli un URL di travel.state.gov da testare
-    url = "https://careers.state.gov/about/reasonable-accommodations/"
-    print(f"Avviando il parsing di Travel.State.Gov per: {url}\nAttendere...")
+    # Scegli un URL di Scaruffi da testare
+    url = "https://www.scaruffi.com/history/cpt12.html"
+    print(f"Avviando il parsing di Scaruffi per: {url}\nAttendere...")
     
     # Inizializza il parser
-    parser = TravelStateGov()
+    parser = ScaruffiParser()
     
     # Esegui il parsing (metodo asincrono)
     risultato = await parser.parse_single(url)

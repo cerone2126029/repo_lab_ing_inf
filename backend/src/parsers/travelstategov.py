@@ -1,12 +1,11 @@
 import re
 from crawl4ai import CrawlerRunConfig, CacheMode
 from parsers.basewebparser import BaseWebParser
-from typing import Dict, Any
 from urllib.parse import unquote
+from typing import Optional
 
 class TravelStateGov(BaseWebParser):
 
-    # Regex per convertire eventuali [Testo del link](url) rimasti in semplice "Testo del link"
     _CLEANING_RULES = [
         (re.compile(r'\[([^\]]+)\]\([^\)]+\)'), r'\1'),
         (re.compile(r'^.*Last Updated:.*$', flags=re.IGNORECASE | re.MULTILINE), ''),
@@ -23,7 +22,8 @@ class TravelStateGov(BaseWebParser):
             ".fusion-builder-column-3",
             ".imageframe",
             ".fusion-button",
-            ".wp-caption"
+            ".wp-caption",
+            ".tsg-rwd-accordion"
         ]
 
         self.run_config = CrawlerRunConfig(
@@ -37,30 +37,41 @@ class TravelStateGov(BaseWebParser):
             excluded_tags=["nav", "footer", "header", "img"],
             excluded_selector=", ".join(excluded_selectors) if excluded_selectors else None
         )
+    
+    def extract_fallback_title(self, url: str) -> Optional[str]:
+        """
+        Metodo ereditato e sovrascritto. 
+        Recupera il titolo dall'URL gestendo sia i link con .html sia quelli senza.
+        """
+        if url:
+            # 1. Rimuove l'eventuale slash finale (es: "accommodations/" -> "accommodations")
+            clean_url = url.rstrip("/")
+            
+            # 2. Prende l'ultimo blocco dell'URL
+            raw_title = clean_url.split("/")[-1]
+            
+            # 3. Toglie l'eventuale .html, decodifica e sostituisce i trattini
+            raw_title = unquote(raw_title).replace(".html", "").replace(".htm", "").replace("-", " ")
+            
+            # 4. Rende la prima lettera di ogni parola maiuscola per un aspetto più pulito
+            return raw_title.title()
+            
+        return None
+    
+    def parse_offline_html(self, html_content: str) -> str:
+        """Metodo per l'elaborazione offline (Gold Standard) delegato al parser."""
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, "html.parser")
+        
+        content = soup.select_one(".tsg-rwd-main-copy-body-frame, .post-content") or soup
+        raw_text = content.get_text(separator="\n")
+        return self.clean_markdown(raw_text)
+    
 
-    def extract_data(self, result) -> Dict[str, Any]:
-        data = super().extract_data(result)
-
-        self._extract_fallback_title(data)
-
-        parsed_text = data.get("parsed_text", "")
-        if result.success and parsed_text and not parsed_text.startswith("ERRORE"):
-            data["parsed_text"] = self.clean_travelstategov_markdown(parsed_text)
-       
-        return data
-    #recupero del titolo dall'url, se fallisce l'estrapolazione da <title>
-    def _extract_fallback_title(self, data: Dict[str, Any]) -> None:
-        """Recupera il titolo dall'URL in caso di fallimento dei selettori CSS."""
-        url = data.get("url", "")
-        if not data.get("title") and ".html" in url:
-            raw_title = url.split("/")[-1].replace(".html", "")
-            data["title"] = unquote(raw_title).replace("-", " ")
-
-    def clean_travelstategov_markdown(self, text: str) -> str:
+    def clean_markdown(self, text: str) -> str:
         if not text:
             return ""
         
-        # Applica sequenzialmente tutte le regole di pulizia testuale
         for pattern, replacement in self._CLEANING_RULES:
             text = pattern.sub(replacement, text)
        
